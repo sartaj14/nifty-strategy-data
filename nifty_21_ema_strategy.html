@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nifty 21EMA Strategy</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #121212;
+      color: #fff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      padding: 8px 12px;
+      border: 1px solid #444;
+      text-align: center;
+    }
+    th {
+      background-color: #333;
+    }
+    .signal-table {
+      background-color: #1e1e1e;
+    }
+    .title {
+      font-size: 24px;
+      margin-bottom: 20px;
+      color: #4fc3f7;
+    }
+    #chart-container {
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="title">Nifty 21 EMA Strategy Signal (5-min Candle)</div>
+  <div id="chart-container">
+    <div class="tradingview-widget-container">
+      <div id="tradingview_7e6fa"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+      <script type="text/javascript">
+        new TradingView.widget({
+          "width": "100%",
+          "height": 400,
+          "symbol": "NSE:NIFTY",
+          "interval": "5",
+          "timezone": "Asia/Kolkata",
+          "theme": "dark",
+          "style": "1",
+          "locale": "in",
+          "toolbar_bg": "#f1f3f6",
+          "enable_publishing": false,
+          "hide_side_toolbar": false,
+          "allow_symbol_change": true,
+          "container_id": "tradingview_7e6fa"
+        });
+      </script>
+    </div>
+  </div>
+
+  <div id="status">Loading data...</div>
+  <table class="signal-table" id="signalTable" style="display:none">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Entry</th>
+        <th>SL</th>
+        <th>Target 1 (1:2)</th>
+        <th>Target 2 (1:5)</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    async function fetchLiveData() {
+      try {
+        const res = await fetch('https://raw.githubusercontent.com/sartaj14/nifty-strategy-data/main/nifty_5min.json');
+        const contentType = res.headers.get("content-type");
+
+        if (!res.ok || !contentType || !contentType.includes("application/json")) {
+          throw new Error("Invalid JSON response");
+        }
+
+        const json = await res.json();
+        const timestamps = json.timestamp;
+        const ohlc = json.indicators.quote[0];
+
+        const candles = timestamps.map((time, i) => ({
+          time: new Date(time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          open: ohlc.open[i],
+          high: ohlc.high[i],
+          low: ohlc.low[i],
+          close: ohlc.close[i],
+        })).filter(c => c.close);
+
+        runStrategy(candles);
+      } catch (err) {
+        document.getElementById("status").innerText = "Failed to load JSON data. Check file URL and format.";
+        console.error(err);
+      }
+    }
+
+    function calculateEMA(data, period) {
+      let ema = [];
+      let k = 2 / (period + 1);
+      let sma = data.slice(0, period).reduce((sum, c) => sum + c.close, 0) / period;
+      ema[period - 1] = sma;
+
+      for (let i = period; i < data.length; i++) {
+        ema[i] = data[i].close * k + ema[i - 1] * (1 - k);
+      }
+
+      return ema;
+    }
+
+    function runStrategy(candles) {
+      const ema21 = calculateEMA(candles, 21);
+      let signals = [];
+
+      for (let i = 21; i < candles.length - 3; i++) {
+        const current = candles[i];
+        const next3 = candles.slice(i + 1, i + 4);
+
+        if (current.close > ema21[i]) {
+          const downCandle = next3.find(c => c.close < c.open);
+          if (downCandle) {
+            const entry = downCandle.high;
+            const sl = downCandle.low;
+            signals.push({
+              time: current.time,
+              entry: entry.toFixed(2),
+              sl: sl.toFixed(2),
+              t1: (entry + (entry - sl) * 2).toFixed(2),
+              t2: (entry + (entry - sl) * 5).toFixed(2)
+            });
+          }
+        }
+
+        if (current.close < ema21[i]) {
+          const upCandle = next3.find(c => c.close > c.open);
+          if (upCandle) {
+            const entry = upCandle.low;
+            const sl = upCandle.high;
+            signals.push({
+              time: current.time,
+              entry: entry.toFixed(2),
+              sl: sl.toFixed(2),
+              t1: (entry - (sl - entry) * 2).toFixed(2),
+              t2: (entry - (sl - entry) * 5).toFixed(2)
+            });
+          }
+        }
+      }
+
+      displaySignals(signals);
+    }
+
+    function displaySignals(signals) {
+      const table = document.getElementById("signalTable");
+      const tbody = table.querySelector("tbody");
+      const status = document.getElementById("status");
+
+      if (signals.length === 0) {
+        status.innerText = "No valid signals found in data.";
+        return;
+      }
+
+      status.style.display = "none";
+      table.style.display = "table";
+      tbody.innerHTML = "";
+
+      signals.forEach(sig => {
+        const row = `<tr>
+          <td>${sig.time}</td>
+          <td>${sig.entry}</td>
+          <td>${sig.sl}</td>
+          <td>${sig.t1}</td>
+          <td>${sig.t2}</td>
+        </tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    fetchLiveData();
+    setInterval(fetchLiveData, 180000);
+  </script>
+</body>
+</html>
