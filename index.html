@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Nifty 21EMA Strategy</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -33,37 +33,14 @@
       margin-bottom: 20px;
       color: #4fc3f7;
     }
-    #chart-container {
-      margin: 20px 0;
+    #chart {
+      height: 400px;
     }
   </style>
 </head>
 <body>
   <div class="title">Nifty 21 EMA Strategy Signal (5-min Candle)</div>
-  <div id="chart-container">
-    <div class="tradingview-widget-container">
-      <div id="tradingview_7e6fa"></div>
-      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-      <script type="text/javascript">
-        new TradingView.widget({
-          "width": "100%",
-          "height": 400,
-          "symbol": "NSE:NIFTY",
-          "interval": "5",
-          "timezone": "Asia/Kolkata",
-          "theme": "dark",
-          "style": "1",
-          "locale": "in",
-          "toolbar_bg": "#f1f3f6",
-          "enable_publishing": false,
-          "hide_side_toolbar": false,
-          "allow_symbol_change": true,
-          "container_id": "tradingview_7e6fa"
-        });
-      </script>
-    </div>
-  </div>
-
+  <div id="chart"></div>
   <div id="status">Loading data...</div>
   <table class="signal-table" id="signalTable" style="display:none">
     <thead>
@@ -79,6 +56,43 @@
   </table>
 
   <script>
+    let chart, candleSeries, emaLine;
+
+    function initChart() {
+      chart = LightweightCharts.createChart(document.getElementById("chart"), {
+        layout: {
+          background: { color: '#121212' },
+          textColor: '#ffffff'
+        },
+        grid: {
+          vertLines: { color: '#2B2B43' },
+          horzLines: { color: '#363C4E' }
+        },
+        timeScale: { timeVisible: true, secondsVisible: false },
+        width: window.innerWidth - 40,
+        height: 400
+      });
+
+      candleSeries = chart.addCandlestickSeries();
+      emaLine = chart.addLineSeries({
+        color: '#f39c12',
+        lineWidth: 2
+      });
+    }
+
+    function calculateEMA(data, period) {
+      let ema = [];
+      let k = 2 / (period + 1);
+      let sma = data.slice(0, period).reduce((sum, c) => sum + c.close, 0) / period;
+      ema[period - 1] = sma;
+
+      for (let i = period; i < data.length; i++) {
+        ema[i] = data[i].close * k + ema[i - 1] * (1 - k);
+      }
+
+      return ema;
+    }
+
     async function fetchLiveData() {
       try {
         const res = await fetch('https://raw.githubusercontent.com/sartaj14/nifty-strategy-data/main/nifty_5min.json');
@@ -93,13 +107,14 @@
         const ohlc = json.indicators.quote[0];
 
         const candles = timestamps.map((time, i) => ({
-          time: new Date(time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: Math.floor(time),
           open: ohlc.open[i],
           high: ohlc.high[i],
           low: ohlc.low[i],
-          close: ohlc.close[i],
+          close: ohlc.close[i]
         })).filter(c => c.close);
 
+        updateChart(candles);
         runStrategy(candles);
       } catch (err) {
         document.getElementById("status").innerText = "Failed to load JSON data. Check file URL and format.";
@@ -107,17 +122,12 @@
       }
     }
 
-    function calculateEMA(data, period) {
-      let ema = [];
-      let k = 2 / (period + 1);
-      let sma = data.slice(0, period).reduce((sum, c) => sum + c.close, 0) / period;
-      ema[period - 1] = sma;
-
-      for (let i = period; i < data.length; i++) {
-        ema[i] = data[i].close * k + ema[i - 1] * (1 - k);
-      }
-
-      return ema;
+    function updateChart(candles) {
+      candleSeries.setData(candles);
+      const ema21 = calculateEMA(candles, 21)
+        .map((val, i) => val ? { time: candles[i].time, value: val } : null)
+        .filter(Boolean);
+      emaLine.setData(ema21);
     }
 
     function runStrategy(candles) {
@@ -134,7 +144,7 @@
             const entry = downCandle.high;
             const sl = downCandle.low;
             signals.push({
-              time: current.time,
+              time: new Date(current.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               entry: entry.toFixed(2),
               sl: sl.toFixed(2),
               t1: (entry + (entry - sl) * 2).toFixed(2),
@@ -149,7 +159,7 @@
             const entry = upCandle.low;
             const sl = upCandle.high;
             signals.push({
-              time: current.time,
+              time: new Date(current.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               entry: entry.toFixed(2),
               sl: sl.toFixed(2),
               t1: (entry - (sl - entry) * 2).toFixed(2),
@@ -188,6 +198,7 @@
       });
     }
 
+    initChart();
     fetchLiveData();
     setInterval(fetchLiveData, 180000);
   </script>
