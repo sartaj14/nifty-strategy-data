@@ -32,9 +32,9 @@ def fetch_and_save_json():
 
 def git_push():
     try:
-        subprocess.run(["git", "add", "nifty_5min.json"], check=True)
+        subprocess.run(["git", "add", "."], check=True)
         subprocess.run(["git", "commit", "-m", f"Auto update: {datetime.now()}"], check=True)
-        subprocess.run(["git", "push"], check=True)
+        subprocess.run(["git", "push", "origin", "HEAD"], check=True)
         print("📤 JSON pushed to GitHub.")
     except subprocess.CalledProcessError as e:
         print("❌ Git push failed:", e)
