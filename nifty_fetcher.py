@@ -33,7 +33,7 @@ def fetch_and_save_json():
 def git_push():
     try:
         subprocess.run(["git", "add", "."], check=True)
-        subprocess.run(["git", "commit", "-m", f"Auto update: {datetime.now()}"])
+        subprocess.run(["git", "commit", "-m", f"Auto update: {datetime.now()}"] , check=True)
         subprocess.run(["git", "pull", "--rebase"], check=True)
         subprocess.run(["git", "push", "origin", "HEAD"], check=True)
         print("📤 JSON pushed to GitHub.")
